@@ -9,24 +9,35 @@
 import Foundation
 import UIKit
 import SpriteKit
+import AVFoundation
 
-class GameScene: SKScene, SKPhysicsContactDelegate{
+class GameScene: SKScene, SKPhysicsContactDelegate, AVAudioPlayerDelegate{
     
     var scrollNode:SKNode!
     var wallNode:SKNode!
     var bird:SKSpriteNode!
+    var cherryNode:SKNode!
+    
+    //音データの読み込み
+    //let gameVC = ViewController()
+    var player: AVAudioPlayer!
     
     //衝突判定カテゴリー
     let birdCategory: UInt32 = 1 << 0       //0...00001
     let groundCategory: UInt32 = 1 << 1     //0...00010
     let wallCategory: UInt32 = 1 << 2       //0...00100
     let scoreCategory: UInt32 = 1 << 3      //0...01000
+    let cherryCategory: UInt32 = 1 << 4     //0...10000
     
     //スコア
     var score = 0
     var scoreLabelNode:SKLabelNode!
     var bestScoreLabelNode:SKLabelNode!
     let userDefaults:NSUserDefaults = NSUserDefaults.standardUserDefaults()
+    
+    //アイテムスコア
+    var bonusScore = 0
+    var bonusScoreLabelNode:SKLabelNode!
     
     //SKView上にシーンが表示された時に呼ばれるメソッド
     override func didMoveToView(view: SKView) {
@@ -46,7 +57,12 @@ class GameScene: SKScene, SKPhysicsContactDelegate{
         wallNode = SKNode()
         scrollNode.addChild(wallNode)
         
+        //チェリー用のノード
+        cherryNode = SKNode()
+        scrollNode.addChild(cherryNode)
+        
         //各種スプライトを生成する処理をメソッドに分割
+        setupCherry()
         setupGround()
         setupCloud()
         setupWall()
@@ -130,6 +146,79 @@ class GameScene: SKScene, SKPhysicsContactDelegate{
             //スプライトを追加する
             scrollNode.addChild(sprite)
         }
+    }
+    
+    func setupCherry() {
+        
+        //アイテムの画像を読み込む
+        let cherryTexture = SKTexture(imageNamed: "cherry")
+        cherryTexture.filteringMode = .Linear
+        print (cherryTexture.size())
+        
+        
+        //必要な個数を計算
+        let cherryMovingDistance = CGFloat(self.frame.size.width + cherryTexture.size().width * 3.5)
+        
+        //画面外まで移動するアクションを作成
+        let moveCherry = SKAction.moveByX(-cherryMovingDistance, y: 0, duration: 2.0)
+        
+        //自身を取り除くアクションを作成
+        let removeCherry = SKAction.removeFromParent()
+        
+        //２つアニメーションを順に実行するアクションを生成
+        let cherryAnimation = SKAction.sequence([moveCherry, removeCherry])
+        
+        //チェリーを生成するアクションを生成
+        let createCherryAnimation = SKAction.runBlock({
+            
+            //チェリー関連のノードを乗せるノードを作成
+            let cherry = SKNode()
+            cherry.position = CGPoint(x: self.frame.size.width + cherryTexture.size().width * 3.5, y: 0.0)
+            cherry.zPosition = -10.0 //雲より手前、地面より奥
+            
+            //画面のY軸の中央値
+            let center_y = self.frame.size.height / 2
+            //アイテムのY座標をランダムにさせる時の最大値
+            let random_y_range = self.frame.size.height / 3
+            //アイテムのY軸の下限
+            let cherry_lowest_y = UInt32(center_y - random_y_range / 2)
+            //1〜random_y_rangeまでのランダムな整数を生成
+            let random_y = arc4random_uniform(UInt32(random_y_range))
+            //y軸の下限にランダムな値を足して、アイテムのy座標を設定
+            let cherry_y = CGFloat(cherry_lowest_y + random_y)
+            
+            //チェリーを作成
+            let cherrySprite = SKSpriteNode(texture: cherryTexture)
+            cherrySprite.position = CGPoint(x: 0.0, y: cherry_y + cherryTexture.size().height)
+            cherry.addChild(cherrySprite)
+            
+            //スプライトに物理演算を設定する
+            cherrySprite.physicsBody = SKPhysicsBody(rectangleOfSize: cherryTexture.size())
+            cherrySprite.physicsBody?.categoryBitMask = self.cherryCategory
+            
+            //衝突の時に動かないように設定する
+            cherrySprite.physicsBody?.dynamic = false
+            
+            //let bonusScoreNode = SKNode()
+            //bonusScoreNode.position = cherry.position
+            //bonusScoreNode.physicsBody = under.physicsBody
+            //bonusScoreNode.physicsBody?.categoryBitMask = self.cherryCategory
+            //bonusScoreNode.physicsBody?.contactTestBitMask = self.birdCategory
+            
+            //cherry.addChild(bonusScoreNode)
+            
+            cherry.runAction(cherryAnimation)
+            
+            self.cherryNode.addChild(cherry)
+            
+        })
+        //次のcherry作成までの待ち時間のアクションを作成
+        let waitAnimation = SKAction.waitForDuration(2)
+        
+        //cherryを作成　→　待ち時間　→　cherryの作成を無限に繰り替えるアクションを作成
+        let repeatForeverAnimation = SKAction.repeatActionForever(SKAction.sequence([createCherryAnimation, waitAnimation]))
+        
+        cherryNode.runAction(repeatForeverAnimation)
     }
     
     func setupWall() {
@@ -244,8 +333,8 @@ class GameScene: SKScene, SKPhysicsContactDelegate{
         
         //衝突のカテゴリー設定
         bird.physicsBody?.categoryBitMask = birdCategory
-        bird.physicsBody?.collisionBitMask = groundCategory | wallCategory
-        bird.physicsBody?.contactTestBitMask = groundCategory | wallCategory
+        bird.physicsBody?.collisionBitMask = groundCategory | wallCategory | cherryCategory
+        bird.physicsBody?.contactTestBitMask = groundCategory | wallCategory | cherryCategory
         
         //アニメーションを設定
         bird.runAction(flap)
@@ -254,6 +343,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate{
     }
     
     override func touchesBegan(touches: Set<UITouch>, withEvent event: UIEvent?) {
+        
         if scrollNode.speed > 0{
             //鳥の速度をゼロにする
             bird.physicsBody?.velocity = CGVector.zero
@@ -276,7 +366,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate{
         if (contact.bodyA.categoryBitMask & scoreCategory) == scoreCategory || (contact.bodyB.categoryBitMask & scoreCategory) == scoreCategory {
             //スコア用の物体と衝突した
             print("Score Up")
-            score += 1
+            score += 10
             scoreLabelNode.text = "Score: \(score)"
             
             //ベストスコア更新か確認する
@@ -287,7 +377,32 @@ class GameScene: SKScene, SKPhysicsContactDelegate{
                 userDefaults.setInteger(bestScore, forKey: "BEST")
                 userDefaults.synchronize()
             }
-        } else {
+        } else if (contact.bodyA.categoryBitMask & cherryCategory) == cherryCategory || (contact.bodyB.categoryBitMask & cherryCategory) == cherryCategory {
+            //アイテムと衝突した
+            
+            if (contact.bodyA.categoryBitMask == cherryCategory) {
+                contact.bodyA.node?.removeFromParent()
+            } else {
+                contact.bodyB.node?.removeFromParent()
+            }
+            
+            print("BONUS!!!!")
+            score += 50
+            bonusScore += 50
+            scoreLabelNode.text = "Score: \(score)"
+            bonusScoreLabelNode.text = "Bonus: \(bonusScore)"
+            
+            //ベストスコア更新か確認する
+            var bestScore = userDefaults.integerForKey("BEST")
+            if score > bestScore {
+                bestScore = score
+                bestScoreLabelNode.text = "Best Score: \(bestScore)"
+                userDefaults.setInteger(bestScore, forKey: "BEST")
+                userDefaults.synchronize()
+            }
+            playSound()
+
+        }else {
             //壁か地面と衝突した
             print ("GameOver")
             
@@ -303,9 +418,25 @@ class GameScene: SKScene, SKPhysicsContactDelegate{
         }
     }
     
+    func playSound() {
+        let url = NSBundle.mainBundle().URLForResource("bird", withExtension: "mp3")!
+        
+        do {
+            player = try AVAudioPlayer(contentsOfURL: url)
+            guard let player = player else { return }
+            
+            player.prepareToPlay()
+            player.play()
+        } catch let error as NSError {
+            print (error.description)
+        }
+    }
+    
     func restart() {
         score = 0
+        bonusScore = 0
         scoreLabelNode.text = String("Score: \(score)")
+        bonusScoreLabelNode.text = String("Bonus: \(bonusScore)")
         
         bird.position = CGPoint(x: self.frame.size.width * 0.2, y: self.frame.size.height * 0.7)
         bird.physicsBody?.velocity = CGVector.zero
@@ -313,6 +444,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate{
         bird.zRotation = 0.0
         
         wallNode.removeAllChildren()
+        cherryNode.removeAllChildren()
         
         bird.speed = 1
         scrollNode.speed = 1
@@ -330,7 +462,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate{
         
         bestScoreLabelNode = SKLabelNode()
         bestScoreLabelNode.fontColor = UIColor.blackColor()
-        bestScoreLabelNode.position = CGPoint(x: 10, y : self.frame.size.height - 60)
+        bestScoreLabelNode.position = CGPoint(x: 10, y : self.frame.size.height - 90)
         bestScoreLabelNode.zPosition = 100 //一番手前に表示するため
         bestScoreLabelNode.horizontalAlignmentMode = SKLabelHorizontalAlignmentMode.Left
         
@@ -338,5 +470,13 @@ class GameScene: SKScene, SKPhysicsContactDelegate{
         bestScoreLabelNode.text = "Best Score: \(bestScore)"
         self.addChild(bestScoreLabelNode)
         
+        bonusScore = 0
+        bonusScoreLabelNode = SKLabelNode()
+        bonusScoreLabelNode.fontColor = UIColor.blueColor()
+        bonusScoreLabelNode.position = CGPoint(x: 10, y : self.frame.size.height - 60)
+        bonusScoreLabelNode.zPosition = 100
+        bonusScoreLabelNode.horizontalAlignmentMode = SKLabelHorizontalAlignmentMode.Left
+        bonusScoreLabelNode.text = "Bonus: \(bonusScore)"
+        self.addChild(bonusScoreLabelNode)
     }
 }
