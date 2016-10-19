@@ -19,8 +19,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate, AVAudioPlayerDelegate{
     var cherryNode:SKNode!
     
     //音データの読み込み
-    //let gameVC = ViewController()
-    var player: AVAudioPlayer!
+    let playSoundAction = SKAction.playSoundFileNamed("bird.mp3", waitForCompletion: false)
     
     //衝突判定カテゴリー
     let birdCategory: UInt32 = 1 << 0       //0...00001
@@ -190,22 +189,16 @@ class GameScene: SKScene, SKPhysicsContactDelegate, AVAudioPlayerDelegate{
             //チェリーを作成
             let cherrySprite = SKSpriteNode(texture: cherryTexture)
             cherrySprite.position = CGPoint(x: 0.0, y: cherry_y + cherryTexture.size().height)
-            cherry.addChild(cherrySprite)
             
             //スプライトに物理演算を設定する
             cherrySprite.physicsBody = SKPhysicsBody(rectangleOfSize: cherryTexture.size())
             cherrySprite.physicsBody?.categoryBitMask = self.cherryCategory
+            cherrySprite.physicsBody?.contactTestBitMask = self.birdCategory
+            
+            cherry.addChild(cherrySprite)
             
             //衝突の時に動かないように設定する
             cherrySprite.physicsBody?.dynamic = false
-            
-            //let bonusScoreNode = SKNode()
-            //bonusScoreNode.position = cherry.position
-            //bonusScoreNode.physicsBody = under.physicsBody
-            //bonusScoreNode.physicsBody?.categoryBitMask = self.cherryCategory
-            //bonusScoreNode.physicsBody?.contactTestBitMask = self.birdCategory
-            
-            //cherry.addChild(bonusScoreNode)
             
             cherry.runAction(cherryAnimation)
             
@@ -259,7 +252,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate, AVAudioPlayerDelegate{
             let under_wall_y = CGFloat(under_wall_lowest_y + random_y)
             
             //キャラが通り抜ける隙間の長さ
-            let slit_length = self.frame.size.height / 6
+            let slit_length = self.frame.size.height / 3
         
             //下側の壁を作成
             let under = SKSpriteNode(texture: wallTexture)
@@ -323,7 +316,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate, AVAudioPlayerDelegate{
         
         //スプライトを生成
         bird = SKSpriteNode(texture: birdTextureA)
-        bird.position = CGPoint(x: 30, y: self.frame.size.height * 0.7)
+        bird.position = CGPoint(x: self.frame.size.width * 0.2, y: self.frame.size.height * 0.7)
         
         //物理演算を設定
         bird.physicsBody = SKPhysicsBody(circleOfRadius: bird.size.height / 2.0)
@@ -333,7 +326,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate, AVAudioPlayerDelegate{
         
         //衝突のカテゴリー設定
         bird.physicsBody?.categoryBitMask = birdCategory
-        bird.physicsBody?.collisionBitMask = groundCategory | wallCategory | cherryCategory
+        bird.physicsBody?.collisionBitMask = groundCategory | wallCategory
         bird.physicsBody?.contactTestBitMask = groundCategory | wallCategory | cherryCategory
         
         //アニメーションを設定
@@ -377,8 +370,12 @@ class GameScene: SKScene, SKPhysicsContactDelegate, AVAudioPlayerDelegate{
                 userDefaults.setInteger(bestScore, forKey: "BEST")
                 userDefaults.synchronize()
             }
-        } else if (contact.bodyA.categoryBitMask & cherryCategory) == cherryCategory || (contact.bodyB.categoryBitMask & cherryCategory) == cherryCategory {
+        } else if (contact.bodyA.categoryBitMask & cherryCategory) == cherryCategory || (contact.bodyB.categoryBitMask & cherryCategory) == cherryCategory{
+            
             //アイテムと衝突した
+            
+            //音を鳴らす
+            runAction(playSoundAction)
             
             if (contact.bodyA.categoryBitMask == cherryCategory) {
                 contact.bodyA.node?.removeFromParent()
@@ -400,7 +397,6 @@ class GameScene: SKScene, SKPhysicsContactDelegate, AVAudioPlayerDelegate{
                 userDefaults.setInteger(bestScore, forKey: "BEST")
                 userDefaults.synchronize()
             }
-            playSound()
 
         }else {
             //壁か地面と衝突した
@@ -415,20 +411,6 @@ class GameScene: SKScene, SKPhysicsContactDelegate, AVAudioPlayerDelegate{
             bird.runAction(roll, completion: {
                 self.bird.speed = 0
             })
-        }
-    }
-    
-    func playSound() {
-        let url = NSBundle.mainBundle().URLForResource("bird", withExtension: "mp3")!
-        
-        do {
-            player = try AVAudioPlayer(contentsOfURL: url)
-            guard let player = player else { return }
-            
-            player.prepareToPlay()
-            player.play()
-        } catch let error as NSError {
-            print (error.description)
         }
     }
     
